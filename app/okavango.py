@@ -19,6 +19,8 @@ import geopandas as gpd
 import pandas as pd
 import requests
 from pydantic import BaseModel, Field
+import matplotlib.pyplot as plt
+
 
 OWID_URLS: dict[str, str] = {
     "annual-change-forest-area.csv": (
@@ -88,26 +90,12 @@ def pick_world_iso_col(world: gpd.GeoDataFrame) -> str:
 
 
 def detect_value_column(df: pd.DataFrame) -> str:
-    """
-    Detect the main numeric metric column in an OWID grapher dataset.
-
-    OWID grapher CSVs commonly include: Entity, Code, Year, <metric>.
-    The metric column name is often NOT literally 'value'.
-    """
-    candidates: list[str] = []
-    for col in df.columns:
-        if col in {"Entity", "Code", "iso3"}:
-            continue
-        if col.lower() == "year":
-            continue
-        if pd.api.types.is_numeric_dtype(df[col]):
-            candidates.append(col)
-
-    if len(candidates) == 1:
-        return candidates[0]
-
-    # Fallback: OWID grapher usually puts the metric as the last column
-    return str(df.columns[-1])
+    drop = {"Entity", "Code", "iso3", "Year"}
+    candidates = [c for c in df.columns if c not in drop]
+    if not candidates:
+        raise ValueError("No metric column found in dataset.")
+    # OWID grapher metric is almost always the last non-meta column
+    return candidates[-1]
 
 
 def merge_world_with_dataset(
@@ -145,7 +133,7 @@ def merge_world_with_dataset(
         raise ValueError("OWID dataset missing ISO3 column (expected 'Code').")
 
     df["iso3"] = df["iso3"].astype(str)
-    df = df[df["iso3"].notna() & (df["iso3"].str.len() == 3)]
+    df = df[(df["iso3"] != "nan") & (df["iso3"].str.len() == 3)]
 
     value_col = detect_value_column(df)
 
@@ -267,10 +255,6 @@ if __name__ == "__main__":
     # Optional: show columns for the first merged GeoDataFrame
     first_name = next(iter(project.merged_maps.keys()))
     print("\nMerged columns sample:", list(project.merged_maps[first_name].columns))
-
-
-
-import matplotlib.pyplot as plt
 
 if __name__ == "__main__":
     project = OkavangoProject()
