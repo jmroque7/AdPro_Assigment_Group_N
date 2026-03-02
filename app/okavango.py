@@ -30,3 +30,8 @@ def merge_world_with_dataset(world, df_latest):
     world = world.rename(columns={"ISO_A3": "iso3"})
     merged = world.merge(df_latest, on="iso3", how="left")
     return merged
+
+if __name__ == "__main__":
+    project_root = Path(__file__).resolve().parent.parent
+    downloads_dir = project_root / "downloads"
+    download_all_datasets(downloads_dir, OWID_URLS)
