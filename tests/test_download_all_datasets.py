@@ -55,3 +55,6 @@ def test_download_all_datasets_skips_existing_nonempty(tmp_path: Path, monkeypat
 
     assert "https://example.com/a" not in calls
     assert "https://example.com/b" in calls
+
+# & "C:\Users\roque\OneDrive\Documentos\Anaconda\python.exe" -m pytest -s -q Adapt this to run
+# install pytest if you haven't already, and then run the above command in your terminal,
