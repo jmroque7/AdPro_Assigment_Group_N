@@ -23,6 +23,7 @@ OWID_URLS = {
     "terrestrial-protected-areas.csv": "https://ourworldindata.org/grapher/terrestrial-protected-areas.csv",
     "share-degraded-land.csv": "https://ourworldindata.org/grapher/share-degraded-land.csv",
     "forest-area-as-share-of-land-area.csv": "https://ourworldindata.org/grapher/forest-area-as-share-of-land-area.csv",
+    "ne_110m_admin_0_countries.zip": "https://naturalearth.s3.amazonaws.com/110m_cultural/ne_110m_admin_0_countries.zip"
 }
 
 def merge_world_with_dataset(world, df_latest):
@@ -35,3 +36,5 @@ if __name__ == "__main__":
     project_root = Path(__file__).resolve().parent.parent
     downloads_dir = project_root / "downloads"
     download_all_datasets(downloads_dir, OWID_URLS)
+
+print("Datasets downloaded successfully.")
