@@ -20,6 +20,41 @@ import pandas as pd
 import requests
 from pydantic import BaseModel, Field
 import matplotlib.pyplot as plt
+import re
+from difflib import get_close_matches
+
+# Manual aliases for the most common name mismatches
+NAME_ALIASES: dict[str, str] = {
+    # Natural Earth -> OWID style (or vice-versa). Normalize both sides anyway.
+    "united states of america": "united states",
+    "russian federation": "russia",
+    "viet nam": "vietnam",
+    "czechia": "czech republic",
+    "bolivia plurinational state of": "bolivia",
+    "iran islamic republic of": "iran",
+    "venezuela bolivarian republic of": "venezuela",
+    "tanzania united republic of": "tanzania",
+    "korea republic of": "south korea",
+    "korea democratic people's republic of": "north korea",
+}
+
+# Things we should never map as "countries" in a fallback
+REGION_KEYWORDS = {
+    "africa", "europe", "asia", "north america", "south america", "oceania",
+    "world", "international", "high income", "low income", "upper middle income", "lower middle income",
+    "european union",
+}
+
+def normalize_name(x: str) -> str:
+    x = str(x).strip().lower()
+    x = re.sub(r"[^\w\s-]", "", x)      # remove punctuation
+    x = re.sub(r"\s+", " ", x)         # collapse spaces
+    x = NAME_ALIASES.get(x, x)         # apply alias
+    return x
+
+def is_region_like(name: str) -> bool:
+    n = normalize_name(name)
+    return n in REGION_KEYWORDS
 
 
 OWID_URLS: dict[str, str] = {
@@ -75,18 +110,28 @@ def get_latest_year_slice(df: pd.DataFrame, year_col: str = "Year") -> pd.DataFr
     return out[out[year_col] == latest_year]
 
 
-def pick_world_iso_col(world: gpd.GeoDataFrame) -> str:
-    """
-    Return the best ISO3 column name for the Natural Earth world dataset.
-    """
+def pick_best_world_iso_col(world: gpd.GeoDataFrame) -> str:
     candidates = ["ISO_A3", "ADM0_A3", "ISO_A3_EH", "ADM0_A3_US"]
+    best_col = None
+    best_score = -1
+
     for col in candidates:
-        if col in world.columns:
-            return col
-    raise ValueError(
-        "No ISO3 column found in world GeoDataFrame. "
-        "Expected one of: ISO_A3, ADM0_A3, ISO_A3_EH, ADM0_A3_US"
-    )
+        if col not in world.columns:
+            continue
+        s = world[col].astype(str)
+        valid = (s.str.len() == 3) & (s != "-99") & (s != "nan")
+        score = int(valid.sum())
+        if score > best_score:
+            best_score = score
+            best_col = col
+
+    if best_col is None:
+        raise ValueError(
+            "No ISO3 column found in world GeoDataFrame. "
+            "Expected one of: ISO_A3, ADM0_A3, ISO_A3_EH, ADM0_A3_US"
+        )
+
+    return best_col
 
 
 def detect_value_column(df: pd.DataFrame) -> str:
@@ -117,7 +162,7 @@ def merge_world_with_dataset(
         raise TypeError("world must be a GeoDataFrame")
 
     world_gdf = world.copy()
-    world_iso_col = pick_world_iso_col(world_gdf)
+    world_iso_col = pick_best_world_iso_col(world_gdf)
     world_gdf["iso3"] = world_gdf[world_iso_col].astype(str)
 
     df = dataset_df.copy()
