@@ -19,7 +19,8 @@ import geopandas as gpd
 import pandas as pd
 import requests
 from pydantic import BaseModel, Field
-import matplotlib.pyplot as pltimport re
+import matplotlib.pyplot as plt
+import re
 from difflib import get_close_matches
 
 # Manual aliases for the most common name mismatches
@@ -318,3 +319,7 @@ if __name__ == "__main__":
     ax.set_axis_off()
 
     plt.show()
+
+
+# To run this file, ensure you have the required libraries installed (geopandas, pandas, requests, pydantic, matplotlib) 
+# and then execute: python -m streamlit run app/streamlit_app.py
