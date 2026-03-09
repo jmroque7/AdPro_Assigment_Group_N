@@ -6,6 +6,7 @@ from typing import Dict, List, Tuple
 
 import geopandas as gpd
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import pandas as pd
 import streamlit as st
 
@@ -38,6 +39,14 @@ DATASETS: List[DatasetInfo] = [
     DatasetInfo("share-degraded-land.csv", "Share of degraded land"),
     DatasetInfo("forest-area-as-share-of-land-area.csv", "Forest area as share of land area"),
 ]
+
+DESCRIPTIONS = {
+    "Annual change in forest area": "Net yearly change in forest coverage across countries.",
+    "Annual deforestation": "Amount of forest area lost per year.",
+    "Share of land protected": "Percentage of land area that is legally protected.",
+    "Share of degraded land": "Percentage of land affected by degradation.",
+    "Forest area as share of land area": "Forest coverage relative to total land area.",
+}
 
 
 # ---------------------------
@@ -80,7 +89,6 @@ def merge_world_left(world: gpd.GeoDataFrame, df_year: pd.DataFrame) -> gpd.GeoD
     """Teacher rule: left dataframe is the GeoDataFrame."""
     world_gdf = world.copy()
 
-    # Find ISO column in Natural Earth
     iso_candidates = ["ISO_A3", "ADM0_A3", "ISO_A3_EH", "ADM0_A3_US"]
     iso_col = next((c for c in iso_candidates if c in world_gdf.columns), None)
     if iso_col is None:
@@ -88,12 +96,10 @@ def merge_world_left(world: gpd.GeoDataFrame, df_year: pd.DataFrame) -> gpd.GeoD
 
     world_gdf["iso3"] = world_gdf[iso_col].astype(str)
 
-    # Make sure right side has iso3
     df_year = df_year.copy()
     if "iso3" not in df_year.columns:
         raise ValueError("Dataset missing iso3 column after cleaning.")
 
-    # One row per country
     df_year = df_year.drop_duplicates(subset=["iso3"])
 
     merged = world_gdf.merge(df_year, on="iso3", how="left")
@@ -133,13 +139,19 @@ st.markdown(
       .pink-sub { color: #ff4fa3; opacity: 0.9; }
       div[data-testid="stMetricValue"] { color: #ff4fa3; }
       .block-container { padding-top: 1.2rem; }
+      div[data-testid="stInfo"] {
+          border-radius: 12px;
+      }
     </style>
     """,
     unsafe_allow_html=True
 )
 
 st.markdown('<div class="pink-title" style="font-size:34px;">Project Okavango</div>', unsafe_allow_html=True)
-st.markdown('<div class="pink-sub" style="font-size:16px;">Interactive maps + analytics using the most recent data available (and any year you choose)</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="pink-sub" style="font-size:16px;">Interactive maps + analytics using the most recent data available (and any year you choose)</div>',
+    unsafe_allow_html=True
+)
 st.write("")
 
 with st.spinner("Loading world map and datasets..."):
@@ -168,6 +180,9 @@ year_choice = st.sidebar.selectbox(
 show_labels = st.sidebar.toggle("Show country labels (slower)", value=False)
 st.sidebar.caption("Tip: labels can be slow. Keep off for performance.")
 
+# Description box
+st.info(DESCRIPTIONS[dataset_choice])
+
 # Filter + clean
 df_year = filter_year(df_raw, year_choice)
 df_year = clean_iso3(df_year)
@@ -191,6 +206,7 @@ with left:
     st.subheader("🗺️ World map")
 
     fig, ax = plt.subplots(figsize=(13, 7))
+    ax.set_facecolor("white")
 
     merged.plot(
         column=metric_col,
@@ -203,8 +219,11 @@ with left:
     ax.set_axis_off()
     ax.set_title(f"{dataset_choice} — {year_choice}", fontsize=16)
 
+    # Better colorbar formatting
+    cbar_ax = fig.axes[-1]
+    cbar_ax.yaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
+
     if show_labels:
-        # Light labels (optional)
         centroids = merged.copy()
         centroids["centroid"] = centroids.geometry.centroid
         for _, row in centroids.dropna(subset=[metric_col]).head(40).iterrows():
@@ -266,7 +285,7 @@ st.markdown("### Distribution")
 vals = df_year[metric_col].dropna()
 
 fig_hist, ax_hist = plt.subplots(figsize=(12, 4))
-ax_hist.hist(vals, bins=30)
+ax_hist.hist(vals, bins=30, alpha=0.7)
 ax_hist.set_title("Histogram of values across countries")
 ax_hist.set_xlabel("Value")
 ax_hist.set_ylabel("Number of countries")
@@ -276,3 +295,5 @@ st.caption(
     "Note: Values come from OWID grapher datasets and Natural Earth country polygons. "
     "If a country has no ISO3 match or missing data for a year, it appears grey."
 )
+
+#To run: py -m streamlit run app\streamlit_app.py
