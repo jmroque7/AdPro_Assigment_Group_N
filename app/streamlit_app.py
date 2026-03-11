@@ -263,6 +263,13 @@ def run_ai_workflow(
     description = describe_image_with_ollama(image_result.image_path, model_name=vision_model)
     assessment = assess_environmental_risk(description, model_name=risk_model)
     return {
+        "inputs": {
+            "latitude": latitude,
+            "longitude": longitude,
+            "zoom": zoom,
+            "vision_model": vision_model,
+            "risk_model": risk_model,
+        },
         "image_result": image_result,
         "description": description,
         "assessment": assessment,
@@ -291,6 +298,18 @@ def render_ai_page() -> None:
         "Large models may take time on the first run."
     )
 
+    current_inputs = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "zoom": zoom,
+        "vision_model": vision_model,
+        "risk_model": risk_model,
+    }
+    previous_result = st.session_state.get("ai_workflow_result")
+    if previous_result and previous_result.get("inputs") != current_inputs:
+        st.session_state.pop("ai_workflow_result", None)
+        previous_result = None
+
     if submitted:
         try:
             with st.spinner("Downloading imagery and running the local AI workflow..."):
@@ -308,6 +327,8 @@ def render_ai_page() -> None:
 
     result = st.session_state.get("ai_workflow_result")
     if not result:
+        if previous_result is None:
+            st.info("Change coordinates, zoom, or model names and run the workflow again to generate a fresh image and risk assessment.")
         return
 
     image_result = result["image_result"]
