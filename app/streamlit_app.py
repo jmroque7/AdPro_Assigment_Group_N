@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Tuple
-from uuid import uuid4
 
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -12,13 +12,14 @@ import pandas as pd
 import streamlit as st
 
 from app.ai_workflow import (
+    DEFAULT_MODELS_CONFIG_PATH,
     OllamaError,
-    assess_environmental_risk,
-    check_ollama_available,
-    describe_image_with_ollama,
-    download_esri_world_imagery,
+    WorkflowConfigError,
+    execute_governed_ai_workflow,
     get_ollama_base_url,
+    load_workflow_config,
     list_ollama_models,
+    workflow_cache_key,
 )
 from app.okavango import OkavangoConfig, OkavangoProject
 
@@ -31,6 +32,7 @@ st.set_page_config(
 
 PINK_CMAP = "RdPu"
 IMAGES_DIR = Path("images")
+MODELS_CONFIG_PATH = DEFAULT_MODELS_CONFIG_PATH
 ZOOM_LEVELS = {
     "Continent view": 4,
     "Country view": 6,
@@ -455,48 +457,6 @@ def render_result_fact(label: str, value: str) -> None:
     )
 
 
-def run_ai_workflow(
-    latitude: float,
-    longitude: float,
-    zoom: int,
-    vision_model: str,
-    risk_model: str,
-    location_label: str,
-) -> dict[str, object]:
-    check_ollama_available()
-    image_result = download_esri_world_imagery(latitude, longitude, zoom, IMAGES_DIR, image_size=512)
-    description = describe_image_with_ollama(
-        image_result.image_path,
-        model_name=vision_model,
-        latitude=latitude,
-        longitude=longitude,
-        zoom=zoom,
-        bbox=image_result.bbox,
-    )
-    assessment = assess_environmental_risk(
-        description,
-        model_name=risk_model,
-        latitude=latitude,
-        longitude=longitude,
-        zoom=zoom,
-        bbox=image_result.bbox,
-    )
-    return {
-        "run_id": uuid4().hex,
-        "inputs": {
-            "latitude": latitude,
-            "longitude": longitude,
-            "zoom": zoom,
-            "vision_model": vision_model,
-            "risk_model": risk_model,
-            "location_label": location_label,
-        },
-        "image_result": image_result,
-        "description": description,
-        "assessment": assessment,
-    }
-
-
 def render_ai_page() -> None:
     st.subheader("AI Workflow: Image-Based Environmental Risk Check")
     st.write(
@@ -516,6 +476,12 @@ def render_ai_page() -> None:
         available_models = list_ollama_models()
     except OllamaError:
         available_models = []
+    try:
+        workflow_config = load_workflow_config(MODELS_CONFIG_PATH)
+    except WorkflowConfigError as exc:
+        st.error(str(exc))
+        st.info("Create or fix `models.yaml` in the project root to run the governed AI workflow.")
+        return
 
     open_section_card(
         "1. Choose How To Select A Location",
@@ -593,7 +559,7 @@ def render_ai_page() -> None:
 
     open_section_card(
         "3. Configure The Analysis",
-        "Choose the satellite view scale and the local Ollama models that will describe the image and assess risk.",
+        "Choose the satellite view scale. The AI models, prompts, and settings come directly from models.yaml for reproducibility.",
     )
     zoom_choice = st.select_slider(
         "Zoom level",
@@ -604,10 +570,22 @@ def render_ai_page() -> None:
     )
     zoom = ZOOM_LEVELS[zoom_choice]
     st.caption(f"Current zoom: {zoom_choice} ({zoom})")
-
     col4, col5 = st.columns(2)
-    vision_model = col4.text_input("Vision model", value=st.session_state.get("ai_vision_model", "llava:7b"), key="ai_vision_model")
-    risk_model = col5.text_input("Risk model", value=st.session_state.get("ai_risk_model", "llama3.2:3b"), key="ai_risk_model")
+    col4.caption(f"Image model: {workflow_config.image_analysis.model}")
+    col5.caption(f"Text model: {workflow_config.text_analysis.model}")
+    st.caption(
+        "Image settings: "
+        f"{json.dumps(workflow_config.image_analysis.settings, sort_keys=True)}"
+    )
+    st.caption(
+        "Text settings: "
+        f"{json.dumps(workflow_config.text_analysis.settings, sort_keys=True)}"
+    )
+    with st.expander("Configured prompts from models.yaml"):
+        st.markdown("**Image analysis prompt**")
+        st.code(workflow_config.image_analysis.prompt)
+        st.markdown("**Text analysis prompt**")
+        st.code(workflow_config.text_analysis.prompt)
     close_section_card()
     submitted = st.button("Run AI workflow", use_container_width=True)
 
@@ -615,19 +593,14 @@ def render_ai_page() -> None:
         "If an Ollama model is missing locally, the app will pull it automatically. "
         "To keep the workflow more laptop-friendly, the image sent to the models uses a reduced size."
     )
+    st.caption(f"Config source: {workflow_config.source_path}")
     st.caption(f"Ollama endpoint: {get_ollama_base_url()}")
     if available_models:
         st.caption(f"Installed Ollama models: {', '.join(available_models)}")
 
-    current_inputs = {
-        "latitude": latitude,
-        "longitude": longitude,
-        "zoom": zoom,
-        "vision_model": vision_model,
-        "risk_model": risk_model,
-    }
+    current_cache_key = workflow_cache_key(latitude, longitude, zoom, workflow_config)
     previous_result = st.session_state.get("ai_workflow_result")
-    if previous_result and previous_result.get("inputs") != current_inputs:
+    if previous_result and previous_result.get("cache_key") != current_cache_key:
         st.session_state.pop("ai_workflow_result", None)
         previous_result = None
 
@@ -635,13 +608,13 @@ def render_ai_page() -> None:
         try:
             st.session_state.pop("ai_workflow_result", None)
             with st.spinner("Downloading imagery and running the local AI workflow..."):
-                st.session_state["ai_workflow_result"] = run_ai_workflow(
+                st.session_state["ai_workflow_result"] = execute_governed_ai_workflow(
                     latitude=latitude,
                     longitude=longitude,
                     zoom=zoom,
-                    vision_model=vision_model,
-                    risk_model=risk_model,
                     location_label=location_label,
+                    images_dir=IMAGES_DIR,
+                    config_path=MODELS_CONFIG_PATH,
                 )
         except OllamaError as exc:
             st.error(str(exc))
@@ -661,6 +634,10 @@ def render_ai_page() -> None:
     image_result = result["image_result"]
     description = result["description"]
     assessment = result["assessment"]
+    if result.get("cached"):
+        st.info("Loaded a cached result from `database/images.csv` because the coordinates and governed settings matched a previous run.")
+    else:
+        st.success("Ran a fresh workflow and appended the result to `database/images.csv`.")
 
     st.markdown("### Results")
     open_section_card(
@@ -679,6 +656,7 @@ def render_ai_page() -> None:
             "Zoom",
             f"{zoom_label_from_value(result['inputs']['zoom'])} ({result['inputs']['zoom']})",
         )
+        render_result_fact("Cache key", str(result.get("cache_key", "n/a"))[:12])
         render_result_fact("Run ID", result.get("run_id", "n/a"))
         render_result_fact("Generated At (UTC)", image_result.generated_at_utc)
         with st.expander("Image metadata"):

@@ -14,6 +14,7 @@ The app now includes:
 
 - An environmental dashboard with world maps, yearly filtering, and country-level comparisons.
 - An AI workflow page that downloads ESRI World Imagery for chosen coordinates, stores the image in `images/`, generates a local vision-model description through Ollama, and runs a second Ollama model to flag environmental risk.
+- A governed AI configuration in `models.yaml` and a persistent run log in `database/images.csv` so the same settings can reproduce and reuse prior results.
 
 Run it with:
 
