@@ -34,6 +34,7 @@ app/
   streamlit_app.py       Main Streamlit application
 database/
   images.csv             Persistent log of AI workflow runs
+downloads/               Downloaded OWID datasets and Natural Earth map files
 images/                  Saved ESRI imagery and example outputs
 models.yaml              Governed Ollama models, prompts, and settings
 requirements.txt         Python dependencies
@@ -58,7 +59,7 @@ For the full AI workflow, you also need:
 
 ## Installation
 
-The project was prepared for Windows, but it should also work on other systems with equivalent commands.
+The project was prepared and tested with Windows PowerShell commands. It may also work on other systems, but those users will need to adapt the virtual-environment activation, environment-variable, and path syntax.
 
 1. Clone the repository.
 2. Open a terminal in the project root.
@@ -189,15 +190,15 @@ Below are three saved examples from the app's AI workflow. These are prototype o
 - Flagged: `Y`
 - Summary: Visible signs of deforestation, land degradation, and urban encroachment.
 
-### Example 3: Porto, Portugal
+### Example 3: Coimbra, Portugal
 
-![Porto example](images/esri_41.1579_-8.6291_z14.jpg)
+![Coimbra example](images/esri_40.2033_-8.4103_z14.jpg)
 
-- Coordinates: `41.1579, -8.6291`
+- Coordinates: `40.2033, -8.4103`
 - Zoom: `14`
-- Risk result: `high` with score `92`
+- Risk result: `medium` with score `68`
 - Flagged: `Y`
-- Summary: Visible signs of deforestation, land degradation, and wildfire scars indicate a high level of environmental stress.
+- Summary: Moderate environmental concerns, but no clear signs of severe stressors.
 
 ## Why This Project Can Help The UN SDGs
 
