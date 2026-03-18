@@ -1,6 +1,6 @@
 # Project Okavango - Part 2
 
-Project Okavango is a lightweight environmental monitoring prototype built for the Advanced Programming assignment. It combines recent Our World in Data datasets, geospatial country maps, ESRI World Imagery, and local Ollama models to help analysts screen areas that may be under environmental stress.
+Project Okavango is a lightweight environmental monitoring prototype built for the Advanced Programming assignment. It combines Our World in Data datasets, geospatial country maps, ESRI World Imagery, and local Ollama models to help users explore environmental patterns and run a first-pass AI-based risk screening workflow.
 
 ## Group N
 
@@ -13,14 +13,17 @@ This project was developed by:
 
 ## What The App Does
 
-The Streamlit app has two pages:
+The Streamlit app includes two main pages:
 
-1. Environmental dashboard
-   Loads recent environmental datasets, joins them with world geometry, and lets the user explore country-level patterns through maps, charts, filters, and comparisons.
-2. AI workflow
-   Lets the user choose latitude, longitude, and zoom, download a matching ESRI World Imagery image, describe that image with a local vision model in Ollama, and then assess whether the area appears to be at environmental risk using a second local language model.
+### Environmental Dashboard
 
-The AI workflow is governed by `models.yaml` and every run is logged in `database/images.csv`. If the same coordinates, zoom, and governed settings were already used before, the app reuses the cached image and stored results instead of running the pipeline again.
+Loads recent environmental datasets, joins them with world geometry, and lets the user explore country-level patterns through maps, charts, filters, and comparisons.
+
+### AI Workflow
+
+Lets the user choose latitude, longitude, and zoom, download a matching ESRI World Imagery image, describe that image with a local vision model in Ollama, and then assess whether the area appears to be at environmental risk using a second local language model.
+
+The AI workflow is governed by `models.yaml`, and every run is logged in `database/images.csv`. If the same coordinates, zoom, and governed settings were already used before, the app reuses the cached image and stored results instead of running the full pipeline again.
 
 ## Repository Structure
 
@@ -37,15 +40,31 @@ requirements.txt         Python dependencies
 tests/                   Automated tests
 ```
 
+## Requirements
+
+Before installation, make sure you have:
+
+- Python 3.10 or newer
+- Internet access for the initial dataset download
+- Internet access the first time Ollama needs to pull a model
+
+For the basic dashboard and test suite, Python and the project dependencies are enough.
+
+For the full AI workflow, you also need:
+
+- Ollama installed locally
+- The Ollama application or service running
+- Enough local hardware resources to run the selected models in `models.yaml`
+
 ## Installation
 
-The project was prepared for Python 3.10+ on Windows, but it should also work on other systems with the equivalent commands.
+The project was prepared for Windows, but it should also work on other systems with equivalent commands.
 
 1. Clone the repository.
 2. Open a terminal in the project root.
 3. Create and activate a virtual environment.
-4. Install Python dependencies.
-5. Install and start Ollama.
+4. Install the Python dependencies.
+5. Install Ollama only if you want to use the AI workflow.
 
 ### Python Setup
 
@@ -56,7 +75,9 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-### Ollama Setup
+If your system uses the Windows launcher, you can use `py` instead of `python` in the commands above.
+
+### Ollama Setup For The AI Workflow
 
 Install Ollama from: <https://ollama.com/download>
 
@@ -82,11 +103,14 @@ The app will automatically pull missing models the first time they are needed.
 
 ## How To Run
 
-Run the Streamlit app with:
+From the project root, run either:
 
 ```powershell
 python -m streamlit run app\streamlit_app.py
 ```
+
+or
+
 ```powershell
 py -m streamlit run app\streamlit_app.py
 ```
@@ -96,7 +120,7 @@ Then open the local Streamlit URL shown in the terminal.
 ## How To Use The AI Workflow
 
 1. Open the `AI workflow` page from the sidebar.
-2. Choose a location either from the built-in country/city list or by entering custom coordinates.
+2. Choose a location either from the built-in country and city list or by entering custom coordinates.
 3. Select a zoom level.
 4. Click `Run AI workflow`.
 
@@ -127,18 +151,23 @@ This keeps the workflow reproducible and makes it possible to explain which exac
 
 You can verify that the project is set up correctly by running the test suite from the project root.
 
-On most systems, either of the following commands will work:
+The tests validate core workflow behavior such as dataset download logic, world-map merging, configuration loading, cache handling, and structured AI risk output behavior.
+
+Run either:
 
 ```powershell
 python -m pytest -q
 ```
+
+or
+
 ```powershell
 py -m pytest -q
 ```
 
 ## Example Environmental Risk Detections
 
-Below are three saved examples from the app's AI workflow. These examples were already generated by the application and logged in `database/images.csv`.
+Below are three saved examples from the app's AI workflow. These are prototype outputs generated by the application and should not be treated as validated environmental assessments.
 
 ### Example 1: Cairo, Egypt
 
@@ -177,18 +206,22 @@ Project Okavango is a prototype, but it shows how low-cost data tools and local 
 The project is especially connected to these Sustainable Development Goals:
 
 - SDG 13: Climate Action
-  The app helps identify visible land stress, degradation, wildfire scars, and possible climate-related impacts that may require intervention.
 - SDG 15: Life on Land
-  The workflow is directly aimed at detecting issues such as deforestation, habitat fragmentation, and land degradation.
 - SDG 11: Sustainable Cities and Communities
-  Urban encroachment and land-cover pressure near settlements can be screened visually, helping understand where development may be harming surrounding ecosystems.
 - SDG 6: Clean Water and Sanitation
-  Because the image analysis also considers water bodies and possible flooding or drought cues, the tool can contribute to early screening of areas where water systems may be under pressure.
 
-In practice, a tool like this could help NGOs, municipalities, researchers, or student teams prioritize where to look next. Instead of manually checking large numbers of locations one by one, they can use a reproducible workflow to flag suspicious areas, document model decisions, and then focus human attention on the places that most need validation.
+In practice, a tool like this could help NGOs, municipalities, researchers, or student teams prioritize where to look next by flagging locations for deeper human review.
+
+## Troubleshooting
+
+- If Streamlit does not start, make sure the virtual environment is activated and the dependencies from `requirements.txt` were installed successfully.
+- If GeoPandas fails during setup, reinstall the Python dependencies inside a clean virtual environment and confirm you are using a supported Python version.
+- If the AI workflow fails, make sure Ollama is installed, running locally, and reachable at the configured `OLLAMA_BASE_URL` or `OLLAMA_HOST`.
+- If a model call fails, check whether Ollama still needs to pull the model listed in `models.yaml` or whether the machine has enough memory for that model.
 
 ## Notes
 
 - The app is a proof of concept, so model outputs may vary depending on machine performance and available memory.
 - The first Ollama run may take longer because models may need to be downloaded.
 - The AI workflow uses free tools and public imagery, so the goal is technical functionality and reproducibility rather than perfect environmental diagnosis.
+- Reproducibility is limited by the local Ollama model version, available hardware, and the prompts and settings defined in `models.yaml`.
