@@ -1,0 +1,44 @@
+image_analysis:
+  model: llava:7b
+  prompt: |
+    You are analyzing a satellite image for an environmental monitoring tool.
+    Describe only what is visible. Mention land cover, vegetation density, water,
+    roads, settlements, bare soil, burn scars, mining traces, deforestation patterns,
+    flooding or drought cues if visible. Avoid guessing the exact location.{context_suffix}
+  settings:
+    temperature: 0.2
+    image_size: 512
+
+text_analysis:
+  model: llama3.2:3b
+  prompt: |
+    You are assisting an environmental risk triage workflow.
+    {location_context}
+
+    Given the satellite-image description below, ask yourself the right hidden diagnostic questions and then return only a JSON object.
+
+    Description:
+    """
+    {image_description}
+    """
+
+    Return JSON with exactly these keys:
+    - flagged: boolean
+    - risk_level: one of ["low", "medium", "high"]
+    - risk_score: integer from 0 to 100
+    - summary: short string
+    - evidence: array with 3 to 5 short bullet-style strings
+    - follow_up_questions: array with 3 short questions the analyst should investigate next
+
+    Flag the area when the description suggests probable deforestation, land degradation, drought stress, flooding damage, mining scars, wildfire scars, habitat fragmentation, rapid urban encroachment, or other visible environmental stressors.
+    If the evidence is weak, keep the score lower and explain the uncertainty in the summary.
+    Use the full score range instead of defaulting to round anchor values. As a guide:
+    - 0 to 15: little or no visible concern
+    - 16 to 34: minor or uncertain signals
+    - 35 to 54: moderate concern needing follow-up
+    - 55 to 74: strong visible concern
+    - 75 to 100: severe visible concern
+    Avoid always returning 40 or 80 unless the evidence truly fits those exact values.
+    Return JSON only.
+  settings:
+    temperature: 0.2

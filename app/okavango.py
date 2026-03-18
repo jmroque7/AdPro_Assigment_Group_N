@@ -320,6 +320,5 @@ if __name__ == "__main__":
 
     plt.show()
 
-
 # To run this file, ensure you have the required libraries installed (geopandas, pandas, requests, pydantic, matplotlib) 
 # and then execute: python -m streamlit run app/streamlit_app.py
