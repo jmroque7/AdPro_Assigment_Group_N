@@ -87,6 +87,9 @@ Run the Streamlit app with:
 ```powershell
 python -m streamlit run app\streamlit_app.py
 ```
+```powershell
+py -m streamlit run app\streamlit_app.py
+```
 
 Then open the local Streamlit URL shown in the terminal.
 
