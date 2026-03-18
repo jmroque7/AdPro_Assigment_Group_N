@@ -17,11 +17,13 @@ from app.ai_workflow import (
     _normalized_risk_outputs,
     append_image_record,
     append_workflow_record,
+    assess_environmental_risk,
     build_bbox,
     check_ollama_available,
     ensure_images_database,
     execute_governed_ai_workflow,
     extract_json_object,
+    fallback_risk_response,
     find_cached_workflow_result,
     get_ollama_base_url,
     load_workflow_config,
@@ -55,6 +57,20 @@ def test_extract_json_object_supports_fenced_json() -> None:
     assert parsed["flagged"] is True
     assert parsed["risk_level"] == "high"
     assert parsed["risk_score"] == 88
+
+
+def test_fallback_risk_response_builds_structured_payload() -> None:
+    parsed = fallback_risk_response(
+        "The image shows patchy forest clearing, bare soil, and road expansion near vegetation.",
+        "Satellite view suggests deforestation and fragmented vegetation.",
+    )
+
+    assert parsed["risk_level"] in {"medium", "high"}
+    assert isinstance(parsed["flagged"], bool)
+    assert parsed["risk_score"] >= 0
+    assert parsed["summary"]
+    assert len(parsed["evidence"]) >= 1
+    assert len(parsed["follow_up_questions"]) == 3
 
 
 def test_get_ollama_base_url_prefers_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -159,6 +175,27 @@ def test_normalized_risk_outputs_reduces_uncertain_low_signal_cases() -> None:
     assert flagged is False
     assert risk_level == "low"
     assert risk_score < 40
+
+
+def test_assess_environmental_risk_falls_back_when_model_returns_plain_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_generate(*args, **kwargs):
+        return (
+            "Visible mining scars and bare soil appear around fragmented vegetation. "
+            "Road access may be expanding the disturbed footprint."
+        )
+
+    monkeypatch.setattr("app.ai_workflow._generate", fake_generate)
+
+    assessment = assess_environmental_risk(
+        "Satellite view shows mining scars, bare soil, and fragmented vegetation.",
+        prompt_template="Assess: {image_description}",
+    )
+
+    assert isinstance(assessment, RiskAssessment)
+    assert assessment.summary
+    assert assessment.raw_response.startswith("Visible mining scars")
+    assert len(assessment.evidence) >= 1
+    assert len(assessment.follow_up_questions) == 3
 
 
 def test_load_workflow_config_reads_valid_yaml(tmp_path: Path) -> None:

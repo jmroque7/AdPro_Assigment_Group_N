@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -170,6 +171,11 @@ RISK_COLOR = {
     "high": "#d00000",
 }
 
+PRIMARY_COLOR = "#ff4fa3"
+NEGATIVE_COLOR = "#ff6b6b"
+CHART_BG = "#111827"
+GRID_COLOR = "#2a3346"
+
 
 def detect_metric_column(df: pd.DataFrame) -> str:
     meta = {"Entity", "Code", "Year", "iso3"}
@@ -213,6 +219,162 @@ def top_bottom(df: pd.DataFrame, metric_col: str, n: int = 5) -> Tuple[pd.DataFr
     return temp.head(n), temp.tail(n).sort_values(metric_col, ascending=True)
 
 
+def format_compact_number(value: float, decimals: int = 1) -> str:
+    if pd.isna(value):
+        return "n/a"
+
+    magnitude = abs(float(value))
+    if magnitude >= 1_000_000_000:
+        return f"{value / 1_000_000_000:.{decimals}f}B"
+    if magnitude >= 1_000_000:
+        return f"{value / 1_000_000:.{decimals}f}M"
+    if magnitude >= 1_000:
+        return f"{value / 1_000:.{decimals}f}k"
+    if math.isclose(value, round(value), rel_tol=0, abs_tol=1e-9):
+        return f"{value:,.0f}"
+    return f"{value:,.2f}"
+
+
+def format_metric_value(value: float) -> str:
+    if pd.isna(value):
+        return "n/a"
+    magnitude = abs(float(value))
+    if magnitude >= 1000:
+        return format_compact_number(float(value), decimals=2)
+    if magnitude >= 100:
+        return f"{value:,.1f}"
+    return f"{value:,.2f}"
+
+
+def format_delta(value: Optional[float]) -> str:
+    if value is None or pd.isna(value):
+        return "No prior-year match"
+    sign = "+" if value > 0 else ""
+    return f"{sign}{format_metric_value(float(value))} vs previous year"
+
+
+def style_chart_axis(ax: plt.Axes) -> None:
+    ax.set_facecolor(CHART_BG)
+    ax.tick_params(colors="#dbe4f3", labelsize=10)
+    for spine in ax.spines.values():
+        spine.set_color("#364055")
+    ax.xaxis.label.set_color("#dbe4f3")
+    ax.yaxis.label.set_color("#dbe4f3")
+    ax.title.set_color("#f7fafc")
+    ax.grid(axis="x", color=GRID_COLOR, alpha=0.55, linewidth=0.8)
+    ax.set_axisbelow(True)
+
+
+def add_card_container_start(class_name: str = "ok-section-card") -> None:
+    st.markdown(f'<div class="{class_name}">', unsafe_allow_html=True)
+
+
+def add_card_container_end() -> None:
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_metric_panel(label: str, value: str, detail: str = "", tone: str = "neutral") -> None:
+    st.markdown(
+        f"""
+        <div class="ok-metric-panel ok-metric-{tone}">
+            <div class="ok-metric-label">{label}</div>
+            <div class="ok-metric-value">{value}</div>
+            <div class="ok-metric-detail">{detail}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_insight_banner(title: str, body: str) -> None:
+    st.markdown(
+        f"""
+        <div class="ok-hero-card">
+            <div class="ok-hero-eyebrow">Dashboard insight</div>
+            <div class="ok-hero-title">{title}</div>
+            <div class="ok-hero-text">{body}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def compute_continent_summary(merged: gpd.GeoDataFrame, metric_col: str) -> pd.DataFrame:
+    if "CONTINENT" not in merged.columns:
+        return pd.DataFrame(columns=["CONTINENT", "median_value", "country_count"])
+
+    continent_df = merged.dropna(subset=[metric_col]).copy()
+    if continent_df.empty:
+        return pd.DataFrame(columns=["CONTINENT", "median_value", "country_count"])
+
+    summary = (
+        continent_df.groupby("CONTINENT", dropna=True)[metric_col]
+        .agg(median_value="median", country_count="count")
+        .reset_index()
+        .sort_values("median_value", ascending=False)
+    )
+    return summary
+
+
+def compute_dashboard_summary(
+    df_raw: pd.DataFrame,
+    df_year: pd.DataFrame,
+    merged: gpd.GeoDataFrame,
+    metric_col: str,
+    year_choice: int,
+) -> Dict[str, object]:
+    values = df_year[metric_col].dropna()
+    previous_years = [year for year in year_options(df_raw) if year < year_choice]
+    previous_year = previous_years[-1] if previous_years else None
+    previous_df = clean_iso3(filter_year(df_raw, previous_year)) if previous_year is not None else pd.DataFrame()
+
+    year_over_year_delta: Optional[float] = None
+    if not previous_df.empty:
+        paired = (
+            df_year[["iso3", metric_col]]
+            .dropna()
+            .merge(
+                previous_df[["iso3", metric_col]].dropna(),
+                on="iso3",
+                how="inner",
+                suffixes=("_current", "_previous"),
+            )
+        )
+        if not paired.empty:
+            year_over_year_delta = float(
+                paired[f"{metric_col}_current"].median() - paired[f"{metric_col}_previous"].median()
+            )
+
+    positive_count = int((values > 0).sum())
+    negative_count = int((values < 0).sum())
+    neutral_count = int((values == 0).sum())
+    total_non_null = int(values.shape[0])
+
+    top_row = df_year[["Entity", metric_col]].dropna().sort_values(metric_col, ascending=False).head(1)
+    bottom_row = df_year[["Entity", metric_col]].dropna().sort_values(metric_col, ascending=True).head(1)
+
+    return {
+        "count": total_non_null,
+        "median": float(values.median()) if not values.empty else None,
+        "mean": float(values.mean()) if not values.empty else None,
+        "q1": float(values.quantile(0.25)) if not values.empty else None,
+        "q3": float(values.quantile(0.75)) if not values.empty else None,
+        "iqr": float(values.quantile(0.75) - values.quantile(0.25)) if not values.empty else None,
+        "positive_count": positive_count,
+        "negative_count": negative_count,
+        "neutral_count": neutral_count,
+        "positive_share": (positive_count / total_non_null * 100) if total_non_null else 0.0,
+        "negative_share": (negative_count / total_non_null * 100) if total_non_null else 0.0,
+        "top_country": top_row.iloc[0]["Entity"] if not top_row.empty else "n/a",
+        "top_value": float(top_row.iloc[0][metric_col]) if not top_row.empty else None,
+        "bottom_country": bottom_row.iloc[0]["Entity"] if not bottom_row.empty else "n/a",
+        "bottom_value": float(bottom_row.iloc[0][metric_col]) if not bottom_row.empty else None,
+        "previous_year": previous_year,
+        "year_over_year_delta": year_over_year_delta,
+        "continent_summary": compute_continent_summary(merged, metric_col),
+    }
+
+
 @st.cache_data(show_spinner=False)
 def load_project() -> Tuple[gpd.GeoDataFrame, Dict[str, pd.DataFrame]]:
     cfg = OkavangoConfig(project_root=Path("."), download=True, latest_year_only=False)
@@ -226,20 +388,58 @@ def render_header() -> None:
         <style>
           :root {
               --ok-card-border: rgba(255, 255, 255, 0.09);
-              --ok-card-bg: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015));
+              --ok-card-bg: linear-gradient(180deg, rgba(18,25,38,0.98), rgba(12,17,27,0.96));
               --ok-muted: #b8bcc8;
               --ok-accent: #ff4fa3;
               --ok-accent-soft: rgba(255, 79, 163, 0.14);
+              --ok-surface: #101722;
+              --ok-surface-2: #121c2a;
+              --ok-green-soft: rgba(47, 191, 113, 0.16);
+              --ok-red-soft: rgba(255, 107, 107, 0.16);
           }
-          .ok-title { color: #ff4fa3; font-weight: 800; font-size: 34px; }
-          .ok-sub { color: #8c2f6b; font-size: 16px; }
+          .stApp {
+              background:
+                  radial-gradient(circle at top right, rgba(255,79,163,0.14), transparent 28%),
+                  radial-gradient(circle at top left, rgba(61,169,252,0.10), transparent 24%),
+                  linear-gradient(180deg, #0a0f18 0%, #0f141d 100%);
+          }
+          .ok-title { color: #ff4fa3; font-weight: 800; font-size: 34px; letter-spacing: -0.02em; }
+          .ok-sub { color: #c18ab0; font-size: 16px; }
           .ok-section-card {
               border: 1px solid var(--ok-card-border);
               border-radius: 18px;
-              padding: 1rem 1rem 0.45rem 1rem;
+              padding: 1rem 1rem 0.75rem 1rem;
               margin-bottom: 1rem;
               background: var(--ok-card-bg);
               box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+          }
+          .ok-hero-card {
+              border: 1px solid rgba(255,255,255,0.08);
+              border-radius: 22px;
+              padding: 1.15rem 1.2rem;
+              margin: 0.35rem 0 1rem 0;
+              background:
+                  linear-gradient(135deg, rgba(22,38,62,0.96), rgba(12,18,28,0.95)),
+                  linear-gradient(135deg, rgba(255,79,163,0.06), rgba(61,169,252,0.06));
+              box-shadow: 0 18px 36px rgba(0, 0, 0, 0.2);
+          }
+          .ok-hero-eyebrow {
+              color: #8cb8ff;
+              text-transform: uppercase;
+              letter-spacing: 0.12em;
+              font-size: 0.72rem;
+              margin-bottom: 0.35rem;
+          }
+          .ok-hero-title {
+              color: #f5f7fb;
+              font-size: 1.25rem;
+              font-weight: 700;
+              margin-bottom: 0.25rem;
+          }
+          .ok-hero-text {
+              color: #b6c2d6;
+              font-size: 0.95rem;
+              line-height: 1.55;
           }
           .ok-section-title {
               font-size: 1rem;
@@ -277,6 +477,53 @@ def render_header() -> None:
               border-radius: 0 12px 12px 0;
               background: var(--ok-accent-soft);
               margin: 0.5rem 0 1rem 0;
+          }
+          .ok-metric-panel {
+              border: 1px solid rgba(255,255,255,0.08);
+              border-radius: 18px;
+              padding: 0.9rem 1rem;
+              background: linear-gradient(180deg, rgba(18, 26, 39, 0.96), rgba(11, 16, 25, 0.94));
+              box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+              min-height: 122px;
+          }
+          .ok-metric-positive { background: linear-gradient(180deg, rgba(18, 35, 28, 0.96), rgba(11, 20, 17, 0.94)); }
+          .ok-metric-negative { background: linear-gradient(180deg, rgba(38, 20, 28, 0.96), rgba(20, 11, 16, 0.94)); }
+          .ok-metric-highlight { background: linear-gradient(180deg, rgba(33, 26, 48, 0.96), rgba(14, 13, 24, 0.94)); }
+          .ok-metric-label {
+              font-size: 0.78rem;
+              text-transform: uppercase;
+              letter-spacing: 0.08em;
+              color: #8fa3bf;
+              margin-bottom: 0.45rem;
+          }
+          .ok-metric-value {
+              font-size: 1.8rem;
+              font-weight: 750;
+              color: #f8fbff;
+              line-height: 1.05;
+              margin-bottom: 0.4rem;
+          }
+          .ok-metric-detail {
+              color: #b8c5d8;
+              font-size: 0.88rem;
+              line-height: 1.45;
+          }
+          div[data-testid="stMetric"] {
+              background: linear-gradient(180deg, rgba(18, 25, 38, 0.96), rgba(12, 17, 27, 0.94));
+              border: 1px solid rgba(255,255,255,0.08);
+              padding: 0.9rem 1rem;
+              border-radius: 16px;
+          }
+          div[data-testid="stMetricLabel"] {
+              color: #9fb0c7;
+          }
+          div[data-testid="stMetricValue"] {
+              color: #f7fafc;
+          }
+          div[data-testid="stDataFrame"] {
+              border-radius: 16px;
+              overflow: hidden;
+              border: 1px solid rgba(255,255,255,0.08);
           }
           .risk-card {
               border-radius: 18px;
@@ -329,23 +576,69 @@ def render_map_page(world_gdf: gpd.GeoDataFrame, datasets: Dict[str, pd.DataFram
     n_with_data = int(merged[metric_col].notna().sum()) if metric_col in merged.columns else 0
     missing_pct = round((1 - (n_with_data / n_total_countries)) * 100, 2) if n_total_countries else 0
     top5, bottom5 = top_bottom(df_year, metric_col, n=5)
+    dashboard_summary = compute_dashboard_summary(df_raw, df_year, merged, metric_col, year_choice)
+
+    render_insight_banner(
+        title=f"{dataset_choice} in {year_choice}",
+        body=(
+            f"{DESCRIPTIONS[dataset_choice]} Median country value is "
+            f"{format_metric_value(dashboard_summary['median'])}, with "
+            f"{dashboard_summary['positive_share']:.0f}% of reporting countries above zero "
+            f"and {dashboard_summary['negative_share']:.0f}% below zero."
+        ),
+    )
+
+    headline_cols = st.columns(4)
+    with headline_cols[0]:
+        render_metric_panel(
+            "Coverage",
+            f"{n_with_data}/{n_total_countries}",
+            f"{missing_pct}% of countries are unmatched for the selected year.",
+            tone="highlight",
+        )
+    with headline_cols[1]:
+        render_metric_panel(
+            "Median value",
+            format_metric_value(dashboard_summary["median"]),
+            format_delta(dashboard_summary["year_over_year_delta"]),
+        )
+    with headline_cols[2]:
+        render_metric_panel(
+            "Highest country",
+            dashboard_summary["top_country"],
+            format_metric_value(dashboard_summary["top_value"]),
+            tone="positive",
+        )
+    with headline_cols[3]:
+        render_metric_panel(
+            "Lowest country",
+            dashboard_summary["bottom_country"],
+            format_metric_value(dashboard_summary["bottom_value"]),
+            tone="negative",
+        )
 
     left, right = st.columns([2.2, 1])
     with left:
         st.markdown("### World map")
-        fig, ax = plt.subplots(figsize=(13, 7))
+        add_card_container_start()
+        fig, ax = plt.subplots(figsize=(13, 7), facecolor=CHART_BG)
         merged.plot(
             column=metric_col,
             cmap=PINK_CMAP,
             legend=True,
             ax=ax,
             missing_kwds={"color": "lightgrey", "label": "No data"},
+            edgecolor="#253041",
+            linewidth=0.35,
         )
         ax.set_axis_off()
-        ax.set_title(f"{dataset_choice} - {year_choice}", fontsize=16)
+        ax.set_title(f"{dataset_choice} - {year_choice}", fontsize=16, color="#f8fbff", pad=14)
 
         cbar_ax = fig.axes[-1]
+        cbar_ax.set_facecolor(CHART_BG)
         cbar_ax.yaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
+        cbar_ax.tick_params(colors="#dbe4f3")
+        cbar_ax.yaxis.label.set_color("#dbe4f3")
 
         if show_labels:
             centroids = merged.copy()
@@ -356,51 +649,134 @@ def render_map_page(world_gdf: gpd.GeoDataFrame, datasets: Dict[str, pd.DataFram
                     row["centroid"].y,
                     str(row.get("NAME", ""))[:10],
                     fontsize=6,
-                    alpha=0.5,
+                    alpha=0.55,
+                    color="#dce7f7",
                 )
         st.pyplot(fig, use_container_width=True)
+        add_card_container_end()
 
     with right:
         st.markdown("### Key metrics")
+        add_card_container_start()
         c1, c2 = st.columns(2)
         c1.metric("Selected year", f"{year_choice}")
         c2.metric("Latest available", f"{latest_year}")
         c3, c4 = st.columns(2)
         c3.metric("Countries with data", f"{n_with_data}/{n_total_countries}")
         c4.metric("Missing countries", f"{missing_pct}%")
-        st.write(
+        c5, c6 = st.columns(2)
+        c5.metric("Positive values", f"{dashboard_summary['positive_count']}")
+        c6.metric("Negative values", f"{dashboard_summary['negative_count']}")
+        st.caption(
             "Grey countries have no matched data for the selected year. "
-            "Use the year selector to compare the latest available data with prior years."
+            "The median delta compares the selected year with the previous year on countries that report in both periods."
         )
+        add_card_container_end()
+
+        add_card_container_start()
+        st.markdown("#### Distribution at a glance")
+        st.caption(
+            f"Middle 50% of countries range from {format_metric_value(dashboard_summary['q1'])} "
+            f"to {format_metric_value(dashboard_summary['q3'])}. "
+            f"That gives an interquartile spread of {format_metric_value(dashboard_summary['iqr'])}."
+        )
+        render_metric_panel(
+            "Balance",
+            f"{dashboard_summary['positive_share']:.0f}% / {dashboard_summary['negative_share']:.0f}%",
+            "Positive vs negative share across reporting countries.",
+            tone="highlight",
+        )
+        add_card_container_end()
 
     st.markdown("### Analysis")
     col_a, col_b = st.columns(2)
     with col_a:
+        add_card_container_start()
         st.markdown("#### Top 5 countries")
-        st.dataframe(top5.rename(columns={metric_col: "value"}), use_container_width=True)
-        fig_top, ax_top = plt.subplots(figsize=(7, 4))
-        ax_top.barh(top5["Entity"], top5[metric_col])
-        ax_top.invert_yaxis()
-        ax_top.set_xlabel("Value")
-        st.pyplot(fig_top, use_container_width=True)
+        st.dataframe(
+            top5.rename(columns={metric_col: "value"}).style.format({"value": format_metric_value}),
+            use_container_width=True,
+        )
+        if top5.empty:
+            st.info("No country-level records are available for this year.")
+        else:
+            fig_top, ax_top = plt.subplots(figsize=(7, 4), facecolor=CHART_BG)
+            ax_top.barh(top5["Entity"], top5[metric_col], color=PRIMARY_COLOR, alpha=0.92)
+            ax_top.invert_yaxis()
+            ax_top.set_xlabel("Value")
+            ax_top.set_title("Highest country values", pad=10)
+            style_chart_axis(ax_top)
+            st.pyplot(fig_top, use_container_width=True)
+        add_card_container_end()
 
     with col_b:
+        add_card_container_start()
         st.markdown("#### Bottom 5 countries")
-        st.dataframe(bottom5.rename(columns={metric_col: "value"}), use_container_width=True)
-        fig_bottom, ax_bottom = plt.subplots(figsize=(7, 4))
-        ax_bottom.barh(bottom5["Entity"], bottom5[metric_col])
-        ax_bottom.invert_yaxis()
-        ax_bottom.set_xlabel("Value")
-        st.pyplot(fig_bottom, use_container_width=True)
+        st.dataframe(
+            bottom5.rename(columns={metric_col: "value"}).style.format({"value": format_metric_value}),
+            use_container_width=True,
+        )
+        if bottom5.empty:
+            st.info("No country-level records are available for this year.")
+        else:
+            fig_bottom, ax_bottom = plt.subplots(figsize=(7, 4), facecolor=CHART_BG)
+            ax_bottom.barh(bottom5["Entity"], bottom5[metric_col], color=NEGATIVE_COLOR, alpha=0.9)
+            ax_bottom.invert_yaxis()
+            ax_bottom.set_xlabel("Value")
+            ax_bottom.set_title("Lowest country values", pad=10)
+            style_chart_axis(ax_bottom)
+            st.pyplot(fig_bottom, use_container_width=True)
+        add_card_container_end()
 
-    st.markdown("### Distribution")
+    st.markdown("### Distribution and regional signal")
+    distribution_col, region_col = st.columns([1.7, 1])
     values = df_year[metric_col].dropna()
-    fig_hist, ax_hist = plt.subplots(figsize=(12, 4))
-    ax_hist.hist(values, bins=30, alpha=0.75)
-    ax_hist.set_title("Histogram of values across countries")
-    ax_hist.set_xlabel("Value")
-    ax_hist.set_ylabel("Number of countries")
-    st.pyplot(fig_hist, use_container_width=True)
+    with distribution_col:
+        add_card_container_start()
+        if values.empty:
+            st.info("No values are available to build a distribution plot for this year.")
+        else:
+            fig_hist, ax_hist = plt.subplots(figsize=(12, 4), facecolor=CHART_BG)
+            ax_hist.hist(values, bins=30, alpha=0.82, color="#66b3ff", edgecolor="#c9e6ff", linewidth=0.5)
+            ax_hist.axvline(values.median(), color=PRIMARY_COLOR, linestyle="--", linewidth=1.8, label="Median")
+            ax_hist.set_title("Histogram of values across countries")
+            ax_hist.set_xlabel("Value")
+            ax_hist.set_ylabel("Number of countries")
+            style_chart_axis(ax_hist)
+            ax_hist.legend(facecolor=CHART_BG, edgecolor="#364055", labelcolor="#eaf2ff")
+            st.pyplot(fig_hist, use_container_width=True)
+        add_card_container_end()
+
+    with region_col:
+        add_card_container_start()
+        st.markdown("#### By continent")
+        continent_summary = dashboard_summary["continent_summary"]
+        if isinstance(continent_summary, pd.DataFrame) and not continent_summary.empty:
+            fig_region, ax_region = plt.subplots(figsize=(6, 4.2), facecolor=CHART_BG)
+            ax_region.barh(
+                continent_summary["CONTINENT"],
+                continent_summary["median_value"],
+                color="#7cc6fe",
+                alpha=0.9,
+            )
+            ax_region.invert_yaxis()
+            ax_region.set_xlabel("Median value")
+            ax_region.set_title("Median by continent", pad=10)
+            style_chart_axis(ax_region)
+            st.pyplot(fig_region, use_container_width=True)
+            st.dataframe(
+                continent_summary.rename(
+                    columns={
+                        "CONTINENT": "continent",
+                        "median_value": "median value",
+                        "country_count": "countries",
+                    }
+                ).style.format({"median value": format_metric_value}),
+                use_container_width=True,
+            )
+        else:
+            st.info("Continent-level summary is not available for this map source.")
+        add_card_container_end()
 
 
 def render_risk_badge(risk_level: str, flagged: bool, score: int) -> None:

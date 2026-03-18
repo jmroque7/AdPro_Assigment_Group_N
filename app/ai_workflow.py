@@ -547,6 +547,62 @@ def extract_json_object(text: str) -> dict[str, Any]:
     return json.loads(text[start : end + 1])
 
 
+def _fallback_questions_from_text(text: str) -> list[str]:
+    questions = [
+        "Is the same pattern visible in imagery from prior months or years?",
+        "Are nearby rivers, wetlands, or vegetation corridors showing signs of stress?",
+        "Would higher-resolution imagery confirm whether the visible disturbance is temporary or persistent?",
+    ]
+    extracted = re.findall(r"([^.!?]*\?)", text)
+    cleaned = [item.strip() for item in extracted if item.strip()]
+    return (cleaned[:3] + questions)[:3]
+
+
+def fallback_risk_response(raw_response: str, image_description: str) -> dict[str, Any]:
+    cleaned_response = " ".join(raw_response.split()).strip()
+    summary = cleaned_response[:280] if cleaned_response else image_description[:280]
+    if not summary:
+        summary = "The model returned an unstructured response, so this assessment was reconstructed from the image description."
+
+    evidence: list[str] = []
+    for source_text in (cleaned_response, image_description):
+        parts = re.split(r"(?<=[.!?])\s+|\n+", source_text)
+        for part in parts:
+            candidate = part.strip(" -\t")
+            if len(candidate) >= 24 and candidate not in evidence:
+                evidence.append(candidate[:160])
+            if len(evidence) >= 4:
+                break
+        if len(evidence) >= 4:
+            break
+
+    if not evidence:
+        evidence = [
+            "The image description was available but the model response was not valid JSON.",
+            image_description[:160] if image_description else "No structured evidence was returned.",
+        ]
+
+    heuristic_score = _infer_score_from_text(image_description, summary, evidence)
+    if heuristic_score < 35:
+        risk_level = "low"
+    elif heuristic_score < 70:
+        risk_level = "medium"
+    else:
+        risk_level = "high"
+
+    severe_hits = _keyword_score(" ".join(evidence + [summary, image_description]), SEVERE_RISK_TERMS)
+    flagged = heuristic_score >= 55 or severe_hits >= 18
+
+    return {
+        "flagged": flagged,
+        "risk_level": risk_level,
+        "risk_score": heuristic_score,
+        "summary": summary,
+        "evidence": evidence[:4],
+        "follow_up_questions": _fallback_questions_from_text(raw_response or image_description),
+    }
+
+
 def _keyword_score(text: str, weights: dict[str, int]) -> int:
     lowered = text.lower()
     return sum(weight for phrase, weight in weights.items() if phrase in lowered)
@@ -631,7 +687,10 @@ def assess_environmental_risk(
         timeout=600,
         options=_ollama_options_from_settings(generation_options),
     )
-    parsed = extract_json_object(raw_response)
+    try:
+        parsed = extract_json_object(raw_response)
+    except (ValueError, json.JSONDecodeError):
+        parsed = fallback_risk_response(raw_response, image_description)
     flagged, risk_level, risk_score, summary, evidence, follow_up_questions = _normalized_risk_outputs(
         parsed=parsed,
         image_description=image_description,
