@@ -125,13 +125,16 @@ This keeps the workflow reproducible and makes it possible to explain which exac
 
 ## Verification
 
-Run the tests with:
+You can verify that the project is set up correctly by running the test suite from the project root.
+
+On most systems, either of the following commands will work:
 
 ```powershell
-pytest -q --basetemp .pytest-tmp
+python -m pytest -q
 ```
-
-`--basetemp .pytest-tmp` is used because in this environment the default global temp directory was not accessible, while a workspace-local temp directory worked correctly.
+```powershell
+py -m pytest -q
+```
 
 ## Example Environmental Risk Detections
 
