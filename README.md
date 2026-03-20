@@ -1,4 +1,4 @@
-# Project Okavango - Part 2
+# Project Okavango 
 
 Project Okavango is an environmental monitoring prototype developed for the Advanced Programming assignment. It combines public environmental datasets, world geospatial boundaries, ESRI World Imagery, and local Ollama models to support two related tasks:
 
@@ -174,6 +174,10 @@ You can also use:
 ```powershell
 python -m streamlit run app\streamlit_app.py
 ```
+or
+```powershell
+py -m streamlit run app\streamlit_app.py
+```
 
 Then open the local Streamlit URL shown in the terminal, usually:
 
@@ -244,6 +248,10 @@ or:
 
 ```powershell
 python -m pytest -q
+```
+or
+```powershell
+py -m pytest -q
 ```
 
 The automated tests cover core behavior such as:
