@@ -1,6 +1,9 @@
 # Project Okavango - Part 2
 
-Project Okavango is a lightweight environmental monitoring prototype built for the Advanced Programming assignment. It combines Our World in Data datasets, geospatial country maps, ESRI World Imagery, and local Ollama models to help users explore environmental patterns and run a first-pass AI-based risk screening workflow.
+Project Okavango is an environmental monitoring prototype developed for the Advanced Programming assignment. It combines public environmental datasets, world geospatial boundaries, ESRI World Imagery, and local Ollama models to support two related tasks:
+
+- exploring country-level environmental indicators in an interactive dashboard
+- running a first-pass AI workflow that describes satellite imagery and flags possible environmental risk
 
 ## Group N
 
@@ -11,84 +14,127 @@ This project was developed by:
 - Nicolas Oteri, student number 71642, 71642@novasbe.pt
 - Karl Harfouche, student number 70044, 70044@novasbe.pt
 
-## What The App Does
+## Project Overview
 
-The Streamlit app includes two main pages:
+The Streamlit application is organized into two main pages.
 
-### Environmental Dashboard
+### 1. Environmental Dashboard
 
-Loads recent environmental datasets, joins them with world geometry, and lets the user explore country-level patterns through maps, charts, filters, and comparisons.
+This page downloads and prepares environmental datasets from Our World in Data, merges them with Natural Earth country geometries, and allows the user to explore patterns through:
 
-### AI Workflow
+- choropleth world maps
+- year filters
+- top and bottom country comparisons
+- summary statistics
+- distribution charts
+- continent-level comparisons
 
-Lets the user choose latitude, longitude, and zoom, download a matching ESRI World Imagery image, describe that image with a local vision model in Ollama, and then assess whether the area appears to be at environmental risk using a second local language model.
+### 2. AI Workflow
 
-The AI workflow is governed by `models.yaml`, and every run is logged in `database/images.csv`. If the same coordinates, zoom, and governed settings were already used before, the app reuses the cached image and stored results instead of running the full pipeline again.
+This page allows the user to:
+
+1. choose a location from a predefined list or enter custom coordinates
+2. request ESRI World Imagery for that location
+3. send the image to a local Ollama vision model for image description
+4. send the description to a second local Ollama model for environmental risk assessment
+5. save the result to a local CSV log for reproducibility and caching
+
+The workflow is governed by [`models.yaml`](models.yaml), which defines the models, prompts, and generation settings used in both AI stages. This separates application logic from model configuration, making experiments easier to reproduce, compare, and audit.
+
+## Main Features
+
+- Interactive environmental dashboard built with Streamlit
+- Automated download of OWID and Natural Earth source files
+- Geospatial joins with GeoPandas
+- ESRI imagery retrieval based on latitude, longitude, and zoom
+- Governed two-step AI workflow using local Ollama models
+- Cached workflow results based on coordinates and full model configuration
+- Persistent run history saved in `database/images.csv`
+- Automated tests for data download, merge logic, and AI workflow behavior
 
 ## Repository Structure
 
 ```text
 app/
-  ai_workflow.py         AI pipeline, caching, database logging, ESRI image download
-  okavango.py            Dataset download and processing logic
+  ai_workflow.py         AI workflow, caching, Ollama integration, CSV logging
+  okavango.py            Dataset download, loading, and geospatial merge logic
   streamlit_app.py       Main Streamlit application
 database/
-  images.csv             Persistent log of AI workflow runs
-downloads/               Downloaded OWID datasets and Natural Earth map files
-images/                  Saved ESRI imagery and example outputs
-models.yaml              Governed Ollama models, prompts, and settings
-requirements.txt         Python dependencies
+  images.csv             Persistent record of AI workflow runs
+downloads/               Downloaded OWID datasets and Natural Earth files
+images/                  Saved ESRI imagery and sample outputs
 tests/                   Automated tests
+models.yaml              Governed models, prompts, and settings
+requirements.txt         Python dependencies
+README.md                Project documentation
 ```
 
 ## Requirements
 
-Before installation, make sure you have:
+For the core dashboard and tests:
 
+- Conda installed locally
 - Python 3.10 or newer
 - Internet access for the initial dataset download
-- Internet access the first time Ollama needs to pull a model
 
-For the basic dashboard and test suite, Python and the project dependencies are enough.
-
-For the full AI workflow, you also need:
+For the AI workflow:
 
 - Ollama installed locally
-- The Ollama application or service running
-- Enough local hardware resources to run the selected models in `models.yaml`
+- Ollama running on the local machine
+- Internet access the first time Ollama pulls a model
+- Enough RAM / compute to run the models defined in `models.yaml`
 
-## Installation
+## Recommended Setup With Conda
 
-The project was prepared and tested with Windows PowerShell commands. It may also work on other systems, but those users will need to adapt the virtual-environment activation, environment-variable, and path syntax.
+The project was prepared and tested with Windows PowerShell. The commands below use `conda` and are written for a typical Windows setup.
 
-1. Clone the repository.
-2. Open a terminal in the project root.
-3. Create and activate a virtual environment.
-4. Install the Python dependencies.
-5. Install Ollama only if you want to use the AI workflow.
-
-### Python Setup
+### 1. Clone the repository
 
 ```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+git clone <your-repository-url>
+cd AdPro_Assigment_Group_N
 ```
 
-If your system uses the Windows launcher, you can use `py` instead of `python` in the commands above.
+### 2. Create a Conda environment
 
-### Ollama Setup For The AI Workflow
+```powershell
+conda create -n okavango python=3.10 -y
+```
 
-Install Ollama from: <https://ollama.com/download>
+### 3. Activate the environment
 
-After installing it, make sure the Ollama application or service is running locally. By default, the app expects:
+```powershell
+conda activate okavango
+```
+
+### 4. Install the project dependencies
+
+```powershell
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+If `conda activate` does not work in PowerShell, initialize Conda first and restart the terminal:
+
+```powershell
+conda init powershell
+```
+
+## Ollama Setup For The AI Workflow
+
+Install Ollama from:
+
+<https://ollama.com/download>
+
+After installation, make sure the Ollama application or background service is running before starting the Streamlit app.
+
+By default, the project expects Ollama at:
 
 ```text
 http://127.0.0.1:11434
 ```
 
-If your Ollama server is running elsewhere, set one of these environment variables before starting the app:
+If your Ollama server is running elsewhere, set one of the following environment variables before launching the app:
 
 ```powershell
 $env:OLLAMA_BASE_URL="http://127.0.0.1:11434"
@@ -100,75 +146,117 @@ or
 $env:OLLAMA_HOST="127.0.0.1:11434"
 ```
 
-The app will automatically pull missing models the first time they are needed.
+The code automatically checks whether the configured Ollama endpoint is reachable and will try to pull missing models when needed. Because the project uses local Ollama models, no external cloud API key is required.
 
-## How To Run
+## AI Configuration
 
-From the project root, run either:
+The file [`models.yaml`](models.yaml) controls the full AI workflow. It currently defines:
+
+- an image-analysis model: `llava:7b`
+- a text-analysis model: `llama3.2:3b`
+- the prompt template used for image description
+- the prompt template used for structured risk assessment
+- generation settings such as `temperature`
+- image settings such as `image_size`
+
+This design improves reproducibility because each saved run is tied to a configuration fingerprint and cache key derived from the selected coordinates, zoom level, prompts, models, and settings.
+
+## How To Run The App
+
+From the project root, with the Conda environment activated:
+
+```powershell
+streamlit run app\streamlit_app.py
+```
+
+You can also use:
 
 ```powershell
 python -m streamlit run app\streamlit_app.py
 ```
 
-or
+Then open the local Streamlit URL shown in the terminal, usually:
 
-```powershell
-py -m streamlit run app\streamlit_app.py
+```text
+http://localhost:8501
 ```
 
-Then open the local Streamlit URL shown in the terminal.
+## How The Dashboard Works
 
-## How To Use The AI Workflow
+When the user opens the `Environmental dashboard` page, the app:
 
-1. Open the `AI workflow` page from the sidebar.
-2. Choose a location either from the built-in country and city list or by entering custom coordinates.
-3. Select a zoom level.
-4. Click `Run AI workflow`.
+1. downloads the configured OWID datasets if they are not already present
+2. downloads and extracts the Natural Earth world map if needed
+3. loads the datasets into pandas DataFrames
+4. merges them with the world geometry using ISO3 codes
+5. allows exploration of environmental metrics by year and country
 
-The app will then:
+The current dashboard datasets include:
 
-1. Download an ESRI World Imagery image into `images/`.
-2. Read the governed model and prompt settings from `models.yaml`.
-3. Generate an image description with the configured vision model.
-4. Ask a second model to assess environmental risk from that description.
-5. Show the image, description, risk badge, evidence, and follow-up questions.
-6. Append the full result to `database/images.csv`.
-7. Reuse a cached result later if the same settings are selected again.
+- annual change in forest area
+- annual deforestation
+- share of protected land
+- share of degraded land
+- forest area as share of land area
 
-## Governed AI Configuration
+## How The AI Workflow Works
 
-The file `models.yaml` stores:
+When the user opens the `AI workflow` page, the app:
 
-- The image-analysis model
-- The image-analysis prompt
-- Image settings such as temperature and image size
-- The text-analysis model
-- The text-analysis prompt
-- Text-generation settings
+1. lets you choose a built-in city or input custom coordinates
+2. lets you choose a zoom level
+3. downloads ESRI satellite imagery for that area
+4. describes the image with the configured Ollama vision model
+5. asks a second model to return a structured JSON risk assessment
+6. stores the full result in `database/images.csv`
+7. reuses a previous result if the coordinates and governed settings match an existing cached run
 
-This keeps the workflow reproducible and makes it possible to explain which exact prompts and models produced each logged result.
+Each workflow result includes:
 
-## Verification
+- selected coordinates and zoom
+- generated image path
+- image description
+- risk level
+- risk score
+- evidence bullets
+- follow-up questions
+- raw model output
 
-You can verify that the project is set up correctly by running the test suite from the project root.
+## Generated Files And Persistent Data
 
-The tests validate core workflow behavior such as dataset download logic, world-map merging, configuration loading, cache handling, and structured AI risk output behavior.
+During normal use, the project may create or update the following folders:
 
-Run either:
+- `downloads/` for OWID CSV files and Natural Earth shapefiles
+- `images/` for ESRI image downloads
+- `database/images.csv` for stored workflow results
+
+These files are part of the normal project workflow. In particular, `database/images.csv` serves both as a persistent execution log and as the source used to recover cached AI workflow results.
+
+## Running The Tests
+
+With the Conda environment activated, run:
+
+```powershell
+pytest -q
+```
+
+or:
 
 ```powershell
 python -m pytest -q
 ```
 
-or
+The automated tests cover core behavior such as:
 
-```powershell
-py -m pytest -q
-```
+- dataset download logic
+- world map and dataset merging
+- governed AI configuration loading
+- workflow caching behavior
+- structured AI output handling
 
-## Example Environmental Risk Detections
+## Example Workflow Outputs
 
-Below are three saved examples from the app's AI workflow. These are prototype outputs generated by the application and should not be treated as validated environmental assessments.
+Below are saved examples from the AI workflow. These are prototype outputs and should not be treated as validated environmental assessments.
 
 ### Example 1: Cairo, Egypt
 
@@ -178,7 +266,6 @@ Below are three saved examples from the app's AI workflow. These are prototype o
 - Zoom: `14`
 - Risk result: `high` with score `90`
 - Flagged: `Y`
-- Summary: Visible signs of deforestation, urbanization, and water bodies suggest a high level of environmental concern.
 
 ### Example 2: Lisbon, Portugal
 
@@ -188,7 +275,6 @@ Below are three saved examples from the app's AI workflow. These are prototype o
 - Zoom: `14`
 - Risk result: `high` with score `92`
 - Flagged: `Y`
-- Summary: Visible signs of deforestation, land degradation, and urban encroachment.
 
 ### Example 3: Coimbra, Portugal
 
@@ -198,31 +284,31 @@ Below are three saved examples from the app's AI workflow. These are prototype o
 - Zoom: `14`
 - Risk result: `medium` with score `68`
 - Flagged: `Y`
-- Summary: Moderate environmental concerns, but no clear signs of severe stressors.
 
-## Why This Project Can Help The UN SDGs
+## Why This Project Matters
 
-Project Okavango is a prototype, but it shows how low-cost data tools and local AI workflows can support environmental monitoring in a practical way. By combining recent public datasets with satellite imagery, the app can help users quickly identify patterns that deserve deeper investigation. It does not replace expert analysis, but it can reduce the time needed to move from raw data to a first environmental risk signal.
-
-The project is especially connected to these Sustainable Development Goals:
+Project Okavango is a prototype, but it demonstrates how public environmental data and local AI tooling can be combined into a practical monitoring workflow. It is especially relevant to:
 
 - SDG 13: Climate Action
 - SDG 15: Life on Land
 - SDG 11: Sustainable Cities and Communities
 - SDG 6: Clean Water and Sanitation
 
-In practice, a tool like this could help NGOs, municipalities, researchers, or student teams prioritize where to look next by flagging locations for deeper human review.
+It does not replace expert assessment. Instead, it helps users move more quickly from raw data and imagery to an initial signal that can then be reviewed by a human analyst.
 
 ## Troubleshooting
 
-- If Streamlit does not start, make sure the virtual environment is activated and the dependencies from `requirements.txt` were installed successfully.
-- If GeoPandas fails during setup, reinstall the Python dependencies inside a clean virtual environment and confirm you are using a supported Python version.
-- If the AI workflow fails, make sure Ollama is installed, running locally, and reachable at the configured `OLLAMA_BASE_URL` or `OLLAMA_HOST`.
-- If a model call fails, check whether Ollama still needs to pull the model listed in `models.yaml` or whether the machine has enough memory for that model.
+- If `conda activate okavango` fails, run `conda init powershell`, restart PowerShell, and try again.
+- If Streamlit does not start, confirm the Conda environment is active and the dependencies from `requirements.txt` were installed successfully.
+- If GeoPandas installation fails, recreate the Conda environment and reinstall the dependencies in a clean environment.
+- If the dashboard fails on first run, check your internet connection because the source datasets and world map may still need to be downloaded.
+- If the AI workflow fails immediately, confirm Ollama is installed, running, and reachable at the configured `OLLAMA_BASE_URL` or `OLLAMA_HOST`.
+- If a model call fails during generation, the machine may not have enough resources for the configured model.
+- If the workflow appears to repeat old results, check `database/images.csv`; the app intentionally reuses cached results when the same coordinates, zoom, and governed settings are selected.
 
 ## Notes
 
-- The app is a proof of concept, so model outputs may vary depending on machine performance and available memory.
-- The first Ollama run may take longer because models may need to be downloaded.
-- The AI workflow uses free tools and public imagery, so the goal is technical functionality and reproducibility rather than perfect environmental diagnosis.
-- Reproducibility is limited by the local Ollama model version, available hardware, and the prompts and settings defined in `models.yaml`.
+- This is a proof-of-concept academic project.
+- The first run is slower because datasets and models may need to be downloaded.
+- AI outputs may vary depending on the exact local model versions and hardware available.
+- Reproducibility is improved through `models.yaml`, but it is still constrained by local environment differences.
